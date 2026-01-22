@@ -346,3 +346,5 @@ class GestorResultados:
                     vectores[f'hog_{i}'] = np.array(car['hog']['vectorCaracteristicas'])
         np.savez_compressed(ruta, **vectores)
         print(f"Vectores de características guardados en {ruta}")
+
+    

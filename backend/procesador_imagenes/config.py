@@ -28,7 +28,7 @@ EXTRACTORES_CARACTERISTICAS = ['momentos', 'sift', 'hog']
 # Configuración de preprocesamiento general (aplica a todo el conjunto)
 CONFIGURACION_PREPROCESAMIENTO = {
     'espacioColor': 'grayscale',
-    'normalizar': False,
+    'normalizar': True,
     'correccionAutomatica': True,
     'fondoBlanco': False,
     'guardarImagenes': True
@@ -44,6 +44,7 @@ DIR_RESULTADOS = os.path.join(RAIZ_PROYECTO, 'results')
 os.makedirs(DIR_CONJUNTOS, exist_ok=True)
 os.makedirs(DIR_RESULTADOS, exist_ok=True)
 
+
 # Parámetros de extracción de características
 PARAMETROS_CARACTERISTICAS = {
     'momentos': {
@@ -51,6 +52,7 @@ PARAMETROS_CARACTERISTICAS = {
         'momentosHu': 7     # 7 momentos invariantes de Hu
     },
     'sift': {
+        'numeroCaracteristicas': 500,   # Número máximo de características a detectar
         'octavas': 4,       # Número de octavas
         'escalas': 5,       # Número de escalas por octava
         'sigma': 1.6,       # Sigma inicial
@@ -58,8 +60,9 @@ PARAMETROS_CARACTERISTICAS = {
     },
     'hog': {
         'orientaciones': 9,     # Número de orientaciones
-        'pixelesPorCelda': (8, 8),    # Tamaño de celda en píxeles
+        'pixelesPorCelda': (16,16),    # Tamaño de celda en píxeles
         'celdasPorBloque': (2, 2),      # Número de celdas por bloque
         'normalizacionBloque': 'L2-Hys' # Tipo de normalización del bloque
     }
 }
+

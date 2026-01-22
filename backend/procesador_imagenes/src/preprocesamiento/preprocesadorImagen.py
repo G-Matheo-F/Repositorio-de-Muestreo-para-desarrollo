@@ -5,6 +5,8 @@ Clase para preprocesamiento de imágenes
 import cv2
 import numpy as np
 import os
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 from typing import Tuple, Optional, Dict
 from pathlib import Path
 
@@ -95,6 +97,7 @@ class PreprocesadorImagen:
             return imagen
         return cv2.cvtColor(imagen, cv2.COLOR_BGR2GRAY)
     
+    
     def normalizar(self, imagen: np.ndarray) -> np.ndarray:
         """
         Normaliza los valores de píxeles a [0, 1]
@@ -131,15 +134,87 @@ class PreprocesadorImagen:
             umbral: Valor de umbral (si None, usa Otsu)
             
         Returns:
-            Imagen binarizada
+            Imagen binarizada con objeto en blanco
         """
         if umbral is None:
             # Usar umbral de Otsu
-            _, binaria = cv2.threshold(imagen, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            _, binaria = cv2.threshold(imagen, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # Detectar automáticamente si invertir
+            # Contar píxeles blancos vs negros
+            pixelesBlanco = np.sum(binaria == 255)
+            pixelesNegro = np.sum(binaria == 0)
+            
+            # Si hay más píxeles blancos, significa que el fondo es blanco
+            # En ese caso, invertir para que el objeto sea blanco
+            if pixelesBlanco > pixelesNegro:
+                binaria = cv2.bitwise_not(binaria)
+            
             return binaria
         else:
+            # Usar umbral fijo
             _, binaria = cv2.threshold(imagen, umbral, 255, cv2.THRESH_BINARY_INV)
             return binaria
+    
+    def aplicarMorfologia(self, imagen: np.ndarray, operacion: str = 'close', 
+                          tamanoKernel: int = 5, iteraciones: int = 2) -> np.ndarray:
+        """
+        Aplica operaciones morfológicas para rellenar huecos y completar objetos
+        
+        Args:
+            imagen: Imagen binaria (0-255)
+            operacion: Tipo de operación ('close' para cierre, 'open' para apertura)
+            tamanoKernel: Tamaño del kernel morfológico
+            iteraciones: Número de iteraciones
+            
+        Returns:
+            Imagen con morfología aplicada
+        """
+        # Crear kernel
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (tamanoKernel, tamanoKernel))
+        
+        resultado = imagen.copy()
+        
+        if operacion == 'close':
+            # Closing: cierra pequeños huecos y conecta regiones cercanas
+            resultado = cv2.morphologyEx(resultado, cv2.MORPH_CLOSE, kernel, iterations=iteraciones)
+        elif operacion == 'open':
+            # Opening: elimina pequeños ruidos y objetos pequeños
+            resultado = cv2.morphologyEx(resultado, cv2.MORPH_OPEN, kernel, iterations=iteraciones)
+        
+        return resultado
+    
+    def aplicarFiltrosSuavizado(self, imagen: np.ndarray, tipoFiltro: str = 'bilateral',
+                               tamanoKernel: int = 5) -> np.ndarray:
+        """
+        Aplica filtros de suavizado para reducir ruido antes de binarizar
+        
+        Args:
+            imagen: Imagen en escala de grises
+            tipoFiltro: Tipo de filtro ('gaussian', 'median', 'bilateral')
+            tamanoKernel: Tamaño del kernel (debe ser impar)
+            
+        Returns:
+            Imagen suavizada
+        """
+        # Asegurar que el tamaño del kernel sea impar
+        if tamanoKernel % 2 == 0:
+            tamanoKernel += 1
+        
+        if tipoFiltro == 'gaussian':
+            # Gaussian Blur: reduce ruido manteniendo bordes difusos
+            return cv2.GaussianBlur(imagen, (tamanoKernel, tamanoKernel), 0)
+        
+        elif tipoFiltro == 'median':
+            # Median Blur: excelente para ruido sal y pimienta, preserva bordes
+            return cv2.medianBlur(imagen, tamanoKernel)
+        
+        elif tipoFiltro == 'bilateral':
+            # Bilateral Filter: suaviza sin difuminar bordes (mejor para contornos)
+            return cv2.bilateralFilter(imagen, tamanoKernel, 75, 75)
+        
+        else:
+            return imagen
     
     def obtenerParametrosStretchingAutomaticos(self,imgGris):
         """
@@ -431,6 +506,84 @@ class PreprocesadorImagen:
             'stdObjeto': stdObjeto if fondoBlanco else stats['desviacionEstandar']
         }
     
+    def graficarHistogramaImagen(self, imagenGris: np.ndarray, titulo: str = "Imagen", 
+                                 guardarRuta: str = None, fondoBlanco: bool = True,
+                                 analisis: Optional[Dict] = None):
+        """
+        Clasifica la imagen por histograma y grafica imagen + histograma con detalles
+        
+        Args:
+            imagenGris: Imagen en escala de grises
+            titulo: Título del gráfico
+            guardarRuta: Ruta donde guardar la figura
+            fondoBlanco: Si la imagen tiene fondo blanco
+        """
+        # Calcular análisis una sola vez
+        if analisis is None:
+            analisis = self.analizarImagen(imagenGris, fondoBlanco)
+        
+        titulo=titulo+"\n"+f"Clasificación: {analisis['condicion']}"
+        # Construir detalles a partir del análisis
+        detalles = []
+        detalles.append("===== DETALLES DEL HISTOGRAMA =====")
+        
+        stats = analisis['estadisticas']
+        detalles.append(f"Media:             {stats['media']:.2f}")
+        detalles.append(f"Desviación:        {stats['desviacionEstandar']:.2f}")
+        detalles.append(f"Rango tonal:       {stats['rangoTonal']}  (min={stats['minimo']:.0f}, max={stats['maximo']:.0f})")
+        detalles.append("")
+        detalles.append(f"Clasificación:     {analisis['condicion']}")
+        detalles.append(f"Razón:             {analisis['razon']}")
+        
+        textoDetalles = "\n".join(detalles) + "\n"
+        
+        # Graficar usando las zonas estándar
+        minVal, maxVal = 0, 255
+        mediaVal = np.mean(imagenGris)
+        
+        a, b = 85, 170
+        zonas = [(minVal, a, 'blue', 'Oscuro'),
+                 (a, b, 'green', 'Medio'),
+                 (b, maxVal, 'red', 'Claro')]
+        
+        fig = plt.figure(figsize=(15, 5))
+        gs = gridspec.GridSpec(2, 2, height_ratios=[3, 1], width_ratios=[1, 2], hspace=0.3, wspace=0.3)
+        
+        # Imagen
+        axImagen = fig.add_subplot(gs[0, 0])
+        axImagen.imshow(imagenGris, cmap='gray', interpolation='nearest')
+        axImagen.axis('off')
+        axImagen.set_title(titulo, fontsize=12, fontweight='bold')
+        
+        # Histograma
+        axHist = fig.add_subplot(gs[0, 1])
+        hist, bins = np.histogram(imagenGris, bins=256, range=(0, 256))
+        
+        for inicio, fin, color, etiqueta in zonas:
+            axHist.axvspan(inicio, fin, color=color, alpha=0.3, label=etiqueta)
+        
+        axHist.bar(bins[:-1], hist, color='lightgray', edgecolor='black')
+        axHist.axvline(mediaVal, color='green', linestyle='--', linewidth=1, 
+                       label=f"Media ({mediaVal:.1f})")
+        axHist.legend()
+        axHist.set_title("Histograma", fontsize=12, fontweight='bold')
+        axHist.set_xlabel("Intensidad")
+        axHist.set_ylabel("Cantidad de píxeles")
+        axHist.grid(alpha=0.3)
+        
+        # Detalles
+        axDetalles = fig.add_subplot(gs[1, :])
+        axDetalles.axis('off')
+        axDetalles.text(0, 0.5, textoDetalles, fontsize=9, va='center', ha='left', 
+                       family='monospace')
+        
+        if guardarRuta:
+            fig.savefig(guardarRuta, bbox_inches='tight', dpi=100)
+            #print(f"Gráfico guardado en {guardarRuta}")
+        
+        plt.close(fig)
+
+
     def aplicarCorreccionAutomatica(self, imagen: np.ndarray, fondoBlanco: bool = True) -> Tuple[np.ndarray, Dict]:
         """
         Analiza la imagen y aplica automáticamente la corrección apropiada
@@ -507,121 +660,84 @@ class PreprocesadorImagen:
             
             # Guardar imagen
             exito = cv2.imwrite(rutaSalida, imagen)
-            
-            """if exito:
-                print(f"Imagen guardada exitosamente en: {rutaSalida}")
-            else:
-                print(f"Error al guardar la imagen en: {rutaSalida}")"""
-            
+                        
             return exito
         except Exception as e:
             print(f"Error al guardar imagen: {str(e)}")
             return False
     
-    def preprocesar(self, rutaImagen: str, 
-                    espacioColor: str = 'grayscale',
-                    normalizar: bool = False,
-                    binarizar: bool = False,
-                    correccionAutomatica: bool = False,
-                    fondoBlanco: bool = True,
-                    tamanoObjetivo: Optional[Tuple[int, int]] = None,
-                    guardar: bool = False,
-                    rutaSalida: Optional[str] = None) -> Tuple[np.ndarray, Optional[Dict]]:
-        """
-        Realiza el preprocesamiento completo de una imagen
-        
-        Args:
-            rutaImagen: Ruta de la imagen
-            espacioColor: 'rgb', 'bgr' o 'grayscale'
-            normalizar: Si normalizar a [0, 1]
-            binarizar: Si binarizar la imagen
-            correccionAutomatica: Si aplicar corrección automática según análisis
-            fondoBlanco: Si la imagen tiene fondo blanco (para análisis automático)
-            tamanoObjetivo: Tamaño objetivo
-            guardar: Si guardar la imagen procesada
-            rutaSalida: Ruta donde guardar la imagen (si guardar=True)
-            
-        Returns:
-            Tupla con (imagen preprocesada, análisis de la imagen si correccionAutomatica=True)
-        """
-        if tamanoObjetivo is None:
-            tamanoObjetivo = self.tamanoObjetivo
-        
-        # Cargar y redimensionar
-        imagen = self.cargarImagen(rutaImagen)
-        imagen = self.redimensionar(imagen, tamanoObjetivo)
-        
-        # Conversión de espacio de color
-        if espacioColor == 'grayscale':
-            imagen = self.aEscalaGrises(imagen)
-        elif espacioColor == 'rgb':
-            imagen = cv2.cvtColor(imagen, cv2.COLOR_BGR2RGB)
-        
-        analisis = None
-        
-        # Aplicar corrección automática si se requiere (sin stretching)
-        if correccionAutomatica:
-            imagen, analisis = self.aplicarCorreccionAutomatica(imagen, fondoBlanco)
-        
-        # Normalizar si se requiere
-        if normalizar:
-            imagen = self.normalizar(imagen)
-        
-        # Binarizar si se requiere
-        if binarizar and len(imagen.shape) == 2:
-            if normalizar:
-                # Convertir de vuelta a uint8 para binarización
-                imagen = (imagen * 255).astype(np.uint8)
-            imagen = self.binarizar(imagen)
-            if normalizar:
-                imagen = self.normalizar(imagen)
-        
-        # Guardar si se requiere
-        if guardar and rutaSalida:
-            self.guardarImagen(imagen, rutaSalida)
-        
-        return imagen, analisis
-
-    def preprocesarEnMemoria(self, imagen: np.ndarray,
-                              espacioColor: str = 'grayscale',
-                              normalizar: bool = False,
-                              binarizar: bool = False,
-                              estirar: bool = False,
-                              correccionAutomatica: bool = False,
-                              fondoBlanco: bool = True,
-                              returnBinaria: bool = False) -> Tuple[np.ndarray, Optional[Dict], Optional[np.ndarray], Optional[np.ndarray]]:
+    def preprocesarImagen(self,
+                          imagen: np.ndarray,
+                          espacioColor: str = 'grayscale',
+                          normalizar: bool = False,
+                          binarizar: bool = False,
+                          correccionAutomatica: bool = False,
+                          fondoBlanco: bool = True) -> Tuple[np.ndarray, Optional[Dict], Optional[np.ndarray], Optional[np.ndarray]]:
         """Preprocesa una imagen ya cargada en memoria (una sola vez)."""
 
         if imagen is None or imagen.size == 0:
             raise ValueError("La imagen es None o está vacía")
+        
 
-        img = imagen.copy()
+        resultado: Dict[str, np.ndarray] = {}
+        resultado['original'] = imagen.copy()
 
-        # Conversión de espacio de color
+        #-------------------------------
+        # 1.- Redimensionar
+        #-------------------------------
+        imagen = self.redimensionar(imagen, self.tamanoObjetivo)
+
+        
+        # -------------------------------
+        # 2.- Conversión de espacio de color
+        # -------------------------------
+
         if espacioColor == 'grayscale':
-            img = self.aEscalaGrises(img)
+            imgTransformada= self.aEscalaGrises(imagen.copy())
         elif espacioColor == 'rgb':
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            imgTransformada= cv2.cvtColor(imagen.copy(), cv2.COLOR_BGR2RGB)
+        else:
+            imgTransformada= imagen.copy()  # Mantener original si no se reconoce
+        resultado['gris'] = imgTransformada.copy()
 
-        analisis = None
-
-        # Corrección automática
+        # -------------------------------
+        # 3.- Corrección automática(mejora de contraste)
+        # -------------------------------
         if correccionAutomatica:
-            img, analisis = self.aplicarCorreccionAutomatica(img, fondoBlanco)
+            imgProcesada, analisis = self.aplicarCorreccionAutomatica(imgTransformada.copy(), fondoBlanco)
+            resultado['mejoraContraste'] = imgProcesada.copy()
+            resultado['analisis'] = analisis
+        else:
+            imgProcesada = imgTransformada.copy()
+            resultado['mejoraContraste'] = imgTransformada.copy()
+            resultado['analisis'] = None
 
-        # Normalización
+        # -------------------------------
+        # 4.- Filtros de suavizado(eliminar ruido)
+        # -------------------------------
+        imgProcesada=(imgProcesada * 255).astype(np.uint8) if imgProcesada.max() <= 1.0 else imgProcesada.astype(np.uint8)
+        imgProcesada=self.aplicarFiltrosSuavizado(imgProcesada, tipoFiltro='median', tamanoKernel=3)
+        resultado['suavizada'] = imgProcesada.copy()
+
+
+
+        # -------------------------------
+        # 5.-Binarización
+        # -------------------------------
+        if binarizar:
+            imgBinarizada = self.binarizar(imgProcesada)
+            imgBinarizada = self.aplicarMorfologia(imgBinarizada, operacion='close', tamanoKernel=5, iteraciones=1)
+            resultado['binarizada'] = imgBinarizada.copy()
+        else:
+            resultado['binarizada'] = None
+
+   
+        # -------------------------------
+        # 5.- Normalización de todas las imágenes
+        # -------------------------------
         if normalizar:
-            img = self.normalizar(img)
+            for clave in ["original", "gris", "mejoraContraste", "suavizada", "binarizada"]:
+                if resultado[clave] is not None:
+                    resultado[clave] = self.normalizar(resultado[clave])
+        return resultado
 
-        preNoBin = None
-        binaria = None
-        if binarizar and len(img.shape) == 2:
-            preNoBin = img.copy()
-            imgUint8 = (img * 255).astype(np.uint8) if normalizar else img
-            binaria = self.binarizar(imgUint8)
-            if normalizar:
-                binaria = self.normalizar(binaria)
-
-        if returnBinaria:
-            return (binaria if binaria is not None else img, analisis, binaria, preNoBin)
-        return (img, analisis, None, None)

@@ -12,6 +12,7 @@ from ..extraccionCaracteristicas import (
     ExtractorSift,
     ExtractorHog
 )
+from config import PARAMETROS_CARACTERISTICAS
 
 
 class ProcesadorCaracteristicas:
@@ -28,9 +29,28 @@ class ProcesadorCaracteristicas:
             tamanoObjetivo: Tamaño objetivo referencial para consistencia
         """
         self.tamanoObjetivo = tamanoObjetivo
-        self.extractorMomentos = ExtractorMomentos()
-        self.extractorSift = ExtractorSift()
-        self.extractorHog = ExtractorHog()
+        # Instanciar extractores usando parámetros de config
+        params_momentos = PARAMETROS_CARACTERISTICAS.get('momentos', {})
+        params_sift = PARAMETROS_CARACTERISTICAS.get('sift', {})
+        params_hog = PARAMETROS_CARACTERISTICAS.get('hog', {})
+        
+        self.extractorMomentos = ExtractorMomentos(
+            ordenMaximo=params_momentos.get('ordenMaximo', 3),
+            momentosHu=params_momentos.get('momentosHu', 7)
+        )
+        self.extractorSift = ExtractorSift(
+            numeroCaracteristicas=params_sift.get('numeroCaracteristicas', 500),
+            octavas=params_sift.get('octavas'),
+            escalas=params_sift.get('escalas'),
+            sigma=params_sift.get('sigma'),
+            umbral=params_sift.get('umbral')
+        )
+        self.extractorHog = ExtractorHog(
+            orientaciones=params_hog.get('orientaciones', 9),
+            pixelesPorCelda=tuple(params_hog.get('pixelesPorCelda', (8, 8))),
+            celdasPorBloque=tuple(params_hog.get('celdasPorBloque', (2, 2))),
+            normalizacionBloque=params_hog.get('normalizacionBloque', 'L2-Hys')
+        )
         self.resultados = {}
 
     def extraerDesdePreprocesadas(self, rutaImagen: str,

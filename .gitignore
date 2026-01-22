@@ -1,3 +1,7 @@
+# Ignorar todo recursivamente
+#results/**/imagenes_procesadas/
+results
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -140,7 +144,7 @@ Thumbs.db
 *.joblib
 *.h5
 *.hdf5
-*.csv
+
 *.xlsx
 *.xls
 

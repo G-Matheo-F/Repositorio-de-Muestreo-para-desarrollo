@@ -12,14 +12,23 @@ class ExtractorSift:
     Extrae características SIFT de imágenes
     """
     
-    def __init__(self, numeroCaracteristicas: int = 500):
+    def __init__(self, numeroCaracteristicas: int = 500, octavas: int = None, 
+                 escalas: int = None, sigma: float = None, umbral: float = None):
         """
         Inicializa el extractor SIFT
         
         Args:
             numeroCaracteristicas: Número máximo de características a detectar
+            octavas: Número de octavas (parámetro opcional)
+            escalas: Número de escalas por octava (parámetro opcional)
+            sigma: Sigma inicial (parámetro opcional)
+            umbral: Umbral de contraste (parámetro opcional)
         """
         self.numeroCaracteristicas = numeroCaracteristicas
+        self.octavas = octavas
+        self.escalas = escalas
+        self.sigma = sigma
+        self.umbral = umbral
         try:
             self.sift = cv2.SIFT_create(nfeatures=numeroCaracteristicas)
         except AttributeError:
@@ -58,7 +67,7 @@ class ExtractorSift:
         """
         if descriptores is None or len(descriptores) == 0:
             # Retornar vector de ceros si no hay descriptores
-            return np.zeros(139)
+            return np.zeros(48, dtype=np.float32)
         
         descriptores = descriptores.astype(np.float32)
         # Estadísticas: media, std, min, max por dimensión (128 * 4 = 512 features)
@@ -92,6 +101,10 @@ class ExtractorSift:
         magnitudes = np.linalg.norm(descriptores, axis=1)
         hist, _ = np.histogram(magnitudes, bins=10, range=(0, 256))
         caracteristicas.extend(hist)
+
+        # Promedio completo por cada dimensión (128 valores)
+        #promediosPorDimension = np.mean(descriptores, axis=0)
+        #caracteristicas.extend(promediosPorDimension.tolist())
 
         return np.array(caracteristicas, dtype=np.float32)
     

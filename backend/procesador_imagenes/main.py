@@ -4,6 +4,7 @@ Script principal de procesamiento de imágenes
 
 import sys
 import os
+import shutil
 from pathlib import Path
 
 # Agregar src al path
@@ -61,12 +62,20 @@ def main():
                        help='Guardar imágenes procesadas en disco (default: True)')
     parser.add_argument('--directorio-imagenes', default=None,
                        help='Directorio donde guardar imágenes procesadas (default: {salida}/imagenes_procesadas)')
+    parser.add_argument('--graficar-histograma', action='store_true', default=False,
+                       help='Graficar histograma de las imágenes procesadas')
     
     args = parser.parse_args()
     
     # Resolver corrección automática con fallback a configuración
     correccion_automatica = args.correccion_automatica if args.correccion_automatica is not None else CONFIGURACION_PREPROCESAMIENTO.get('correccionAutomatica', False)
     dir_salida = args.salida or DIR_RESULTADOS
+
+    # Limpiar carpeta de resultados si existe
+    if os.path.exists(dir_salida):
+        print(f"\nBorrando carpeta: {dir_salida}")
+        shutil.rmtree(dir_salida)
+        print(f"Carpeta borrada exitosamente\n")
 
     # Seleccionar datasets
     conjuntosAProcesar = []
@@ -89,14 +98,16 @@ def main():
             correccion_automatica,
             args.fondo_blanco,
             args.guardar_imagenes,
-            args.directorio_imagenes
+            args.directorio_imagenes,
+            args.graficar_histograma
         )
 
 
 def procesarConjunto(nombreConjunto: str, algoritmos: list, 
                    tamanoMuestra: int = None, dirSalida: str = './results',
                    correccionAutomatica: bool = False, fondoBlanco: bool = True,
-                   guardarImagenes: bool = False, dirImagenes: str = None):
+                   guardarImagenes: bool = False, dirImagenes: str = None,
+                   graficarHistograma: bool = False):
     """
     Procesa un dataset específico
     
@@ -109,6 +120,7 @@ def procesarConjunto(nombreConjunto: str, algoritmos: list,
         fondoBlanco: Si las imágenes tienen fondo blanco
         guardarImagenes: Si guardar las imágenes procesadas
         dirImagenes: Directorio donde guardar imágenes procesadas
+        graficarHistograma: Si graficar histogramas de las imágenes
     """
     
     configuracion = CONJUNTOS_DATOS[nombreConjunto]
@@ -179,22 +191,31 @@ def procesarConjunto(nombreConjunto: str, algoritmos: list,
     contador_por_clase = {}  # Contador de imágenes por clase
     for i, ruta in enumerate(tqdm(image_paths, desc="Procesando", unit="img"), start=1):
         try:
-            # Preprocesar una vez
+            #1.- Cargar imagen
             img_orig = prep.cargarImagen(ruta)
-            img_orig = prep.redimensionar(img_orig, tamanoObjetivo)
-            # Siempre generar gris y binaria para usar según algoritmo
-            procBase, analisisBase, binaria, preNoBin = prep.preprocesarEnMemoria(
+
+            #2.- Preprocesar imagen
+
+            resultados= prep.preprocesarImagen(
                 img_orig,
                 espacioColor=cfg.get('espacioColor', 'grayscale'),
-                normalizar=cfg.get('normalizar', False),
+                normalizar=cfg.get('normalizar', True),
                 binarizar=True,
                 correccionAutomatica=correccionAutomatica,
-                fondoBlanco=fondoBlanco,
-                returnBinaria=True
+                fondoBlanco=fondoBlanco
+            )
+            procBase, analisisBase, binaria=(
+                resultados.get('suavizada'),#Imagen preprocesada y eliminada de ruido
+                resultados.get('analisisImagen'),#
+                resultados.get('binarizada')
             )
 
-            # Extraer características desde las matrices preprocesadas
-            res = processor.extraerDesdePreprocesadas(ruta, preNoBin if preNoBin is not None else procBase, binaria, algoritmos)
+
+            # 3.- Extraer características (Momentos, SIFT, HOG)
+            res = processor.extraerDesdePreprocesadas(ruta, 
+                                                      procBase,#Imagen preprocesada y eliminada de ruido
+                                                      binaria, #Imagen binarizada
+                                                      algoritmos)
             # Adjuntar análisis si existe
             if analisisBase and res.get('analisisImagen') is None:
                 res['analisisImagen'] = analisisBase
@@ -215,11 +236,12 @@ def procesarConjunto(nombreConjunto: str, algoritmos: list,
                 rutas_destino = {
                     'original': os.path.join(carpeta_destino, f"original_{nombre}"),
                     'preprocesada': os.path.join(carpeta_destino, f"preprocesada_{nombre}"),
-                    'binaria': os.path.join(carpeta_destino, f"binaria_{nombre}")
+                    'binaria': os.path.join(carpeta_destino, f"binaria_{nombre}"),
+                    'histograma': os.path.join(carpeta_destino, f"histograma_{nombre}")
                 }
                 imgs_a_guardar = {
                     'original': img_orig,
-                    'preprocesada': preNoBin if preNoBin is not None else procBase,
+                    'preprocesada': procBase,
                     'binaria': binaria
                 }
                 for clave, img in imgs_a_guardar.items():
@@ -228,6 +250,15 @@ def procesarConjunto(nombreConjunto: str, algoritmos: list,
                     destino = rutas_destino[clave]
                     os.makedirs(os.path.dirname(destino), exist_ok=True)
                     prep.guardarImagen(img, destino, crearDirectorio=False)
+                # Guardar histograma si está activado
+                if graficarHistograma:
+                    hist_destino = rutas_destino['histograma']
+                    prep.graficarHistogramaImagen(resultados.get('gris'),
+                                                  titulo=f"Imagen: {nombre}",
+                                                  guardarRuta=hist_destino,
+                                                  fondoBlanco=fondoBlanco,
+                                                  analisis=analisisBase)
+
 
             resultados_imagenes.append(res)
         except Exception as e:
