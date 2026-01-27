@@ -16,6 +16,10 @@ from src.utilidades import ProcesadorCaracteristicas, GestorResultados
 from config import CONJUNTOS_DATOS, DIR_RESULTADOS
 import argparse
 from tqdm import tqdm
+from src.embedding_nn.run_embeddings import run as run_embeddings
+
+
+
 
 
 def descargarConjuntoSiNecesario(nombreConjunto: str, configuracionConjunto: dict) -> str:
@@ -285,6 +289,10 @@ def procesarConjunto(nombreConjunto: str, algoritmos: list,
     # Mostrar resumen
     print()
     results_handler.imprimirResumen(results)
+
+    # ====== GENERACIÓN DE EMBEDDINGS ======
+    print("Generando embeddings con red neuronal")
+    run_embeddings()
 
 
 if __name__ == '__main__':

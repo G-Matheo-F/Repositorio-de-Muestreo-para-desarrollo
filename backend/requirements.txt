@@ -8,3 +8,6 @@ matplotlib>=3.5.0
 tqdm>=4.62.0
 kagglehub>=0.2.0
 mahotas>=1.4.0
+tensorflow>=2.16
+seaborn>=0.12
+Pillow>=9.5

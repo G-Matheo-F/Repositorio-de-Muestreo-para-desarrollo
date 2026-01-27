@@ -226,7 +226,7 @@ def analizarCarpetaResults(rutaResults):
 
 
 def main():
-    rutaResults = Path("backend/procesador_imagenes/results")
+    rutaResults = Path("backend/procesador_imagenes/results/ecommerce")
     analizarCarpetaResults(rutaResults)
 
 
