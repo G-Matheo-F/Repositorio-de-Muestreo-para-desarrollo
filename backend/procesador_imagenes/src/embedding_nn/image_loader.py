@@ -26,7 +26,10 @@ def cargar_imagenes_procesadas(ruta_dataset: Path, image_size):
                 img = cv2.resize(img, image_size)
                 img = img.astype(np.float32) / 255.0
 
-                X.append(img.flatten())
+                # 👇 mantener forma (H, W, 1)
+                img = np.expand_dims(img, axis=-1)
+
+                X.append(img)
                 rutas.append(str(img_path))
                 clases.append(carpeta_clase.name)
 

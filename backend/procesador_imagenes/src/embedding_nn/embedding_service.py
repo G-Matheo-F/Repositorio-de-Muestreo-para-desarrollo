@@ -1,13 +1,12 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import LabelEncoder
 
 from .image_loader import cargar_imagenes_procesadas
-from .autoencoder_model import construir_autoencoder
+from .cnn_bottleneck_model import construir_cnn_bottleneck
 from .config import (
     IMAGE_SIZE,
     EMBEDDING_DIM,
-    HIDDEN_DIM,
     EPOCHS,
     BATCH_SIZE,
     LEARNING_RATE
@@ -26,19 +25,19 @@ def generar_embeddings_dataset(ruta_dataset):
         print("No se encontraron imágenes procesadas")
         return
 
-    scaler = StandardScaler()
-    X_norm = scaler.fit_transform(X)
+    # Codificar clases (entrenamiento supervisado)
+    encoder_clases = LabelEncoder()
+    y = encoder_clases.fit_transform(clases)
 
-    autoencoder, encoder = construir_autoencoder(
-        X_norm.shape[1],
+    model, embedding_model = construir_cnn_bottleneck(
+        IMAGE_SIZE,
         EMBEDDING_DIM,
-        HIDDEN_DIM,
         LEARNING_RATE
     )
 
-    autoencoder.fit(
-        X_norm,
-        X_norm,
+    model.fit(
+        X,
+        y,
         epochs=EPOCHS,
         batch_size=BATCH_SIZE,
         validation_split=0.1,
@@ -46,7 +45,7 @@ def generar_embeddings_dataset(ruta_dataset):
         verbose=1
     )
 
-    embeddings = encoder.predict(X_norm)
+    embeddings = embedding_model.predict(X, verbose=1)
 
     carpeta_salida = ruta_dataset / "embeddings_nn"
     carpeta_salida.mkdir(exist_ok=True)
@@ -62,4 +61,4 @@ def generar_embeddings_dataset(ruta_dataset):
     ruta_csv = carpeta_salida / "embeddings.csv"
     df.to_csv(ruta_csv, index=False)
 
-    print(f"Embeddings guardados en {ruta_csv}")
+    print(f"✔ Embeddings guardados en {ruta_csv}")
